@@ -1,0 +1,263 @@
+﻿@page "/SalesInfo"
+@rendermode InteractiveServer 
+@using BlazorCrudApp.Models
+@using BlazorCrudApp.Models.DTOModel
+@using BlazorCrudApp.Services
+@inject CustomerService _CusService
+@inject ProductService _ProService
+@inject SalesService Service
+@inject IJSRuntime JS
+@inject NavigationManager Nav
+
+<div class="container-fluid py-4">
+    <h3 class="mb-4 fw-bold text-primary">Sales Management</h3>
+
+    <!-- Form Card -->
+    <div class="card shadow-sm mb-4 border-0">
+        <div class="card-body">
+            <h5 class="card-title mb-3">
+                @(editing.SalesId == 0 ? "New Sale" : "Edit Sale")
+            </h5>
+
+            <div class="row g-3">
+                <div class="col-12 col-md-3 col-lg-2">
+                    <label class="form-label small fw-bold">Sale Date</label>
+                    <InputDate @bind-Value="editing.SaleDate" class="form-control" />
+                </div>
+
+                <div class="col-12 col-md-4 col-lg-3">
+                    <label class="form-label small fw-bold">Customer</label>
+                    <select class="form-select" @bind="editing.CusId" @bind:after="OnCustomerChanged">
+                        <option value="0">-- Select Customer --</option>
+                        @foreach (var cus in Customers)
+                        {
+                            <option value="@cus.CusID">@cus.CusName</option>
+                        }
+                    </select>
+                </div>
+
+                <div class="col-12 col-md-3 col-lg-2">
+                    <label class="form-label small fw-bold">Balance</label>
+                    <input type="text"
+                           class="form-control text-end fw-bold"
+                           value="@selectedCustomerBalance.ToString("C")"
+                           readonly />
+                </div>
+
+                <div class="col-12 col-md-4 col-lg-3">
+                    <label class="form-label small fw-bold">Product</label>
+                    <select class="form-select" @bind="editing.ProductId" @bind:after="OnProductChanged">
+                        <option value="0">-- Select Product --</option>
+                        @foreach (var prod in Products)
+                        {
+                            <option value="@prod.Id">@prod.Name</option>
+                        }
+                    </select>
+                </div>
+
+                <div class="col-12 col-md-3 col-lg-2">
+                    <label class="form-label small fw-bold">Unit Price</label>
+                    <input type="text"
+                           class="form-control text-end fw-bold"
+                           value="@selectedProductPrice.ToString("C")"
+                           readonly />
+                </div>
+
+                <div class="col-12 col-md-3 col-lg-2">
+                    <label class="form-label small fw-bold">Quantity</label>
+                    <input type="number" min="1"
+                           @bind="editing.Quantity"
+                           @bind:event="oninput"
+                           class="form-control text-end" />
+                </div>
+
+                <div class="col-12 col-md-3 col-lg-2">
+                    <label class="form-label small fw-bold">Total Amount</label>
+                    <input type="text"
+                           class="form-control text-end fw-bold text-success"
+                           value="@CalculateTotal().ToString("C")"
+                           readonly />
+                </div>
+            </div>
+
+            <div class="mt-4">
+                <button class="btn btn-primary px-4 me-2" @onclick="Save" disabled="@(!IsValidSale)">
+                    <i class="bi bi-cart-check me-1"></i> Save Sale
+                </button>
+
+                @if (editing.SalesId != 0)
+                {
+                    <button class="btn btn-outline-secondary px-4" @onclick="CancelEdit">
+                        Cancel
+                    </button>
+                }
+            </div>
+        </div>
+    </div>
+
+    <!-- Table -->
+    @if (SalesListDisplay == null)
+    {
+        <div class="text-center py-5">
+            <div class="spinner-border text-primary" role="status"></div>
+            <p class="mt-2 text-muted">Loading sales records...</p>
+        </div>
+    }
+    else if (!SalesListDisplay.Any())
+    {
+        <div class="alert alert-info text-center">
+            No sales records found
+        </div>
+    }
+    else
+    {
+        <div class="card shadow-sm border-0 overflow-hidden">
+            <div class="table-responsive">
+                <table class="table table-hover table-bordered mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Date</th>
+                            <th>Customer</th>
+                            <th>Product</th>
+                            <th class="text-end">Unit Price</th>
+                            <th class="text-end">Qty</th>
+                            <th class="text-end">Total</th>
+                            <th class="text-center" style="width:160px">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var sale in SalesListDisplay)
+                        {
+                            <tr>
+                                <td>@sale.SaleDate.ToString("dd-MMM-yyyy")</td>
+                                <td class="fw-medium">@sale.Customer?.CusName</td>
+                                <td>@sale.Product?.Name</td>
+                                <td class="text-end">@sale.Product?.Price.ToString("C")</td>
+                                <td class="text-end">@sale.Quantity</td>
+                                <td class="text-end fw-bold">@((sale.Product?.Price * sale.Quantity ?? 0).ToString("C"))</td>
+                                <td class="text-center">
+                                    <div class="d-flex justify-content-center gap-2 flex-wrap">
+                                        <button class="btn btn-sm btn-outline-primary"
+                                                title="Edit sale"
+                                                @onclick="() => StartEdit(sale)">
+                                            <i class="bi bi-pencil"></i>
+                                        </button>
+                                        <button class="btn btn-sm btn-outline-danger"
+                                                title="Delete sale"
+                                                @onclick="() => Delete(sale.SalesId)">
+                                            <i class="bi bi-trash"></i>
+                                        </button>
+                                    </div>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    private List<Customer> Customers = new();
+    private List<Product> Products = new();
+    private List<Sales> SalesList = new();
+    private List<DtoSales> SalesListDisplay = new();
+
+    private Sales editing = new() { SaleDate = DateTime.Today, Quantity = 1 };
+    private decimal selectedCustomerBalance = 0;
+    private decimal selectedProductPrice = 0;
+
+    private bool IsValidSale =>
+        editing.CusId > 0 &&
+        editing.ProductId > 0 &&
+        editing.Quantity > 0;
+
+    protected override async Task OnInitializedAsync() => await Load();
+
+    private async Task Load()
+    {
+        Customers = await _CusService.GetCustomersAsync();
+        Products = await _ProService.GetProductsAsync();
+        SalesList = await Service.GetSalesAsync();
+
+        SalesListDisplay = SalesList.Select(s => new DtoSales
+        {
+            SalesId = s.SalesId,
+            ProductId = s.ProductId,
+            CusId = s.CusId,
+            Quantity = s.Quantity,
+            SaleDate = s.SaleDate,
+            Product = Products.FirstOrDefault(p => p.Id == s.ProductId),
+            Customer = Customers.FirstOrDefault(c => c.CusID == s.CusId)
+        }).ToList();
+
+        StateHasChanged();
+    }
+
+    private void OnCustomerChanged()
+    {
+        var customer = Customers.FirstOrDefault(c => c.CusID == editing.CusId);
+        selectedCustomerBalance = customer?.CusBalane ?? 0;
+        StateHasChanged();
+    }
+
+    private void OnProductChanged()
+    {
+        var product = Products.FirstOrDefault(p => p.Id == editing.ProductId);
+        selectedProductPrice = product?.Price ?? 0;
+        StateHasChanged();
+    }
+
+    private decimal CalculateTotal() => selectedProductPrice * editing.Quantity;
+
+    private async Task Save()
+    {
+        if (!IsValidSale)
+        {
+            await JS.InvokeVoidAsync("alert", "Please select customer, product and enter valid quantity");
+            return;
+        }
+
+        if (editing.SalesId == 0)
+            await Service.AddSalesAsync(editing);
+        else
+            await Service.UpdateSalesAsync(editing);
+
+        editing = new Sales { SaleDate = DateTime.Today, Quantity = 1 };
+        selectedCustomerBalance = 0;
+        selectedProductPrice = 0;
+        await Load();
+    }
+
+    private void StartEdit(DtoSales sale)
+    {
+        editing = new Sales
+        {
+            SalesId = sale.SalesId,
+            ProductId = sale.ProductId,
+            CusId = sale.CusId,
+            Quantity = sale.Quantity,
+            SaleDate = sale.SaleDate
+        };
+
+        OnCustomerChanged();
+        OnProductChanged();
+    }
+
+    private async Task Delete(int id)
+    {
+        var confirmed = await JS.InvokeAsync<bool>("confirm", "Delete this sale record?");
+        if (!confirmed) return;
+
+        await Service.DeleteSalesAsync(id);
+        await Load();
+    }
+
+    private void CancelEdit()
+    {
+        editing = new Sales { SaleDate = DateTime.Today, Quantity = 1 };
+        selectedCustomerBalance = 0;
+        selectedProductPrice = 0;
+    }
+}

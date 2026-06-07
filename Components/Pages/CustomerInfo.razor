@@ -1,0 +1,213 @@
+﻿@page "/CustomerInfo"
+@rendermode InteractiveServer
+@using BlazorCrudApp.Models
+@using BlazorCrudApp.Services
+@inject CustomerService Service
+@inject IJSRuntime JS
+@inject NavigationManager Nav
+
+<div class="container-fluid py-4">
+    <h3 class="mb-4 fw-bold text-primary">Customer Management</h3>
+
+    <!-- Form Card -->
+    <div class="card shadow-sm mb-4 border-0">
+        <div class="card-body">
+            <h5 class="card-title mb-3">
+                @(editing.CusID == 0 ? "Add New Customer" : "Edit Customer")
+            </h5>
+
+            <div class="row g-3">
+                <div class="col-12 col-md-5">
+                    <label class="form-label small fw-bold">Customer Name</label>
+                    <input placeholder="Enter customer name"
+                           @bind="editing.CusName"
+                           class="form-control" />
+                </div>
+
+                <div class="col-12 col-sm-6 col-md-3">
+                    <label class="form-label small fw-bold">Balance</label>
+                    <input type="number" step="0.01"
+                           placeholder="0.00"
+                           @bind="editing.CusBalane"
+                           class="form-control" />
+                </div>
+
+                <div class="col-12 col-sm-6 col-md-4">
+                    <label class="form-label small fw-bold">Customer Type</label>
+                    <select class="form-select" @bind="editing.CusType">
+                        <option value="">-- Select Type --</option>
+                        <option value="Regular">Regular</option>
+                        <option value="Premium">Premium</option>
+                        <option value="VIP">VIP</option>
+                    </select>
+                </div>
+
+                <div class="col-12">
+                    <label class="form-label small fw-bold">Description</label>
+                    <textarea placeholder="Customer notes / description..."
+                              rows="2"
+                              @bind="editing.CusDescription"
+                              class="form-control"></textarea>
+                </div>
+            </div>
+
+            <div class="mt-4">
+                <button class="btn btn-primary px-4 me-2" @onclick="Save">
+                    <i class="bi bi-save me-1"></i> Save
+                </button>
+
+                @if (editing.CusID != 0)
+                {
+                    <button class="btn btn-outline-secondary px-4" @onclick="() => editing = new()">
+                        Cancel
+                    </button>
+                }
+            </div>
+        </div>
+    </div>
+
+    <!-- Filter & (optional) Report -->
+    <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3 mb-3">
+        <div class="input-group" style="max-width: 400px;">
+            <span class="input-group-text bg-white border-end-0">
+                <i class="bi bi-search"></i>
+            </span>
+            <input type="text"
+                   @bind="searchTerm"
+                   @bind:event="oninput"
+                   placeholder="Search by name or description..."
+                   class="form-control border-start-0" />
+        </div>
+
+        <!-- Optional: you can add report button later if needed -->
+        <!--
+        <button class="btn btn-outline-success px-4" @onclick="OpenReport">
+            <i class="bi bi-file-earmark-pdf me-2"></i> Preview Report
+        </button>
+        -->
+    </div>
+
+    <!-- Customers Table -->
+    @if (Customers == null)
+    {
+        <div class="text-center py-5">
+            <div class="spinner-border text-primary" role="status"></div>
+            <p class="mt-2 text-muted">Loading customers...</p>
+        </div>
+    }
+    else if (FilteredCustomers.Any() == false)
+    {
+        <div class="alert alert-info text-center">
+            No customers found matching your search
+        </div>
+    }
+    else
+    {
+        <div class="card shadow-sm border-0 overflow-hidden">
+            <div class="table-responsive">
+                <table class="table table-hover table-bordered mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Name</th>
+                            <th>Balance</th>
+                            <th>Type</th>
+                            <th>Description</th>
+                            <th class="text-center" style="width:160px">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var c in FilteredCustomers)
+                        {
+                            <tr>
+                                <td class="fw-medium">@c.CusName</td>
+                                <td class="text-end fw-bold">@c.CusBalane.ToString("C")</td>
+                                <td>
+                                    <span class="badge bg-info-subtle text-info">
+                                        @c.CusType
+                                    </span>
+                                </td>
+                                <td class="text-muted">@c.CusDescription</td>
+                                <td class="text-center">
+                                    <div class="d-flex justify-content-center gap-2 flex-wrap">
+                                        <button class="btn btn-sm btn-outline-primary"
+                                                title="Edit customer"
+                                                @onclick="() => StartEdit(c)">
+                                            <i class="bi bi-pencil"></i>
+                                        </button>
+
+                                        <button class="btn btn-sm btn-outline-danger"
+                                                title="Delete customer"
+                                                @onclick="() => Delete(c.CusID)">
+                                            <i class="bi bi-trash"></i>
+                                        </button>
+                                    </div>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    private List<Customer> Customers = new();
+    private Customer editing = new();
+    private string searchTerm = "";
+
+    private IEnumerable<Customer> FilteredCustomers =>
+        string.IsNullOrWhiteSpace(searchTerm)
+            ? Customers
+            : Customers.Where(c =>
+                (c.CusName?.Contains(searchTerm, StringComparison.OrdinalIgnoreCase) ?? false) ||
+                (c.CusDescription?.Contains(searchTerm, StringComparison.OrdinalIgnoreCase) ?? false));
+
+    protected override async Task OnInitializedAsync() => await Load();
+
+    private async Task Load()
+    {
+        Customers = await Service.GetCustomersAsync();
+        StateHasChanged();
+    }
+
+    private void StartEdit(Customer c)
+    {
+        editing = new Customer
+        {
+            CusID = c.CusID,
+            CusName = c.CusName,
+            CusBalane = c.CusBalane,
+            CusType = c.CusType,
+            CusDescription = c.CusDescription
+        };
+    }
+
+    private async Task Save()
+    {
+        if (editing.CusID == 0)
+            await Service.AddCustomerAsync(editing);
+        else
+            await Service.UpdateCustomerAsync(editing);
+
+        editing = new Customer();
+        await Load();
+    }
+
+    private async Task Delete(int id)
+    {
+        var confirm = await JS.InvokeAsync<bool>("confirm", "Are you sure you want to delete this customer?");
+        if (confirm)
+        {
+            await Service.DeleteCustomerAsync(id);
+            await Load();
+        }
+    }
+
+    // Optional - if you later want to add customer report
+    // private async Task OpenReport()
+    // {
+    //     var url = Nav.ToAbsoluteUri("/api/report/customers/all");
+    //     await JS.InvokeVoidAsync("open", url, "_blank");
+    // }
+}
